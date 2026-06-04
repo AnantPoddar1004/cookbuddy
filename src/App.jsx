@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import './App.css'
+import { getRecipes } from './recipes'
 
 const navItems = [
   { id: 'home', label: 'Home', icon: 'H' },
@@ -14,17 +15,16 @@ const starterPreferences = {
   skillLevel: 'Beginner',
   budget: '65',
   goals: 'High-protein dinners with leftovers for lunch',
-  stores: ['Walmart', 'Trader Joe’s'],
+  stores: ['Walmart', "Trader Joe’s"],
 }
 
-const recipeMatches = [
+const starterRecipes = [
   {
     id: 'chickpea-bowl',
     name: 'Crispy Chickpea Rice Bowl',
     time: '28 min',
     level: 'Beginner',
     servings: 3,
-    cartCount: 6,
     match: 'Uses pantry staples, keeps prep simple, and fits a protein-focused goal.',
     ingredients: ['Chickpeas', 'Brown rice', 'Greek yogurt', 'Cucumber', 'Lemon', 'Paprika'],
     steps: [
@@ -39,7 +39,6 @@ const recipeMatches = [
     time: '35 min',
     level: 'Novice',
     servings: 4,
-    cartCount: 5,
     match: 'A familiar comfort recipe with a lighter sauce and easy leftovers.',
     ingredients: ['Rigatoni', 'Tomato paste', 'Cream', 'Parmesan', 'Spinach'],
     steps: [
@@ -54,7 +53,6 @@ const recipeMatches = [
     time: '30 min',
     level: 'Beginner',
     servings: 2,
-    cartCount: 4,
     match: 'Budget-friendly, allergy-aware, and built around one pan.',
     ingredients: ['Eggs', 'Crushed tomatoes', 'Bell pepper', 'Feta'],
     steps: [
@@ -69,20 +67,40 @@ const pantryItems = ['Russet potatoes', 'Blueberries', 'Unsalted butter']
 
 function App() {
   const [activeView, setActiveView] = useState('home')
-  const [selectedRecipeId, setSelectedRecipeId] = useState(recipeMatches[0].id)
-  const selectedRecipe = recipeMatches.find((recipe) => recipe.id === selectedRecipeId)
+  const [prefs, setPrefs] = useState(starterPreferences)
+  const [recipes, setRecipes] = useState(starterRecipes)
+  const [loading, setLoading] = useState(false)
+  const [selectedRecipeId, setSelectedRecipeId] = useState(starterRecipes[0].id)
+
+  const selectedRecipe = recipes.find((r) => r.id === selectedRecipeId) || recipes[0]
 
   const cartItems = useMemo(() => {
     const ingredientMap = new Map()
-
-    recipeMatches.slice(0, 2).forEach((recipe) => {
+    recipes.forEach((recipe) => {
       recipe.ingredients.forEach((ingredient) => {
         ingredientMap.set(ingredient, (ingredientMap.get(ingredient) || 0) + 1)
       })
     })
-
     return Array.from(ingredientMap, ([name, count]) => ({ name, count }))
-  }, [])
+  }, [recipes])
+
+  async function handleGenerate() {
+    setLoading(true)
+    const result = await getRecipes(prefs)
+    if (result.length > 0) {
+      setRecipes(result)
+      setSelectedRecipeId(result[0].id)
+    }
+    setLoading(false)
+    setActiveView('recipes')
+  }
+
+  function toggleStore(store) {
+    const next = prefs.stores.includes(store)
+      ? prefs.stores.filter((s) => s !== store)
+      : [...prefs.stores, store]
+    setPrefs({ ...prefs, stores: next })
+  }
 
   return (
     <main className="app-shell">
@@ -116,8 +134,8 @@ function App() {
             <p className="eyebrow">MVP dashboard</p>
             <h1>Plan dinners around your preferences, budget, and cooking level.</h1>
           </div>
-          <button className="primary-action" type="button" onClick={() => setActiveView('recipes')}>
-            Generate recipes
+          <button className="primary-action" type="button" onClick={handleGenerate} disabled={loading}>
+            {loading ? 'Generating…' : 'Generate recipes'}
           </button>
         </header>
 
@@ -143,21 +161,35 @@ function App() {
             <div className="form-grid">
               <label>
                 Dietary restrictions and allergies
-                <textarea defaultValue={starterPreferences.dietaryRestrictions} />
+                <textarea
+                  value={prefs.dietaryRestrictions}
+                  onChange={(e) => setPrefs({ ...prefs, dietaryRestrictions: e.target.value })}
+                />
               </label>
               <label>
                 Weekly budget
-                <input defaultValue={`$${starterPreferences.budget}`} />
+                <input
+                  value={prefs.budget}
+                  onChange={(e) => setPrefs({ ...prefs, budget: e.target.value })}
+                />
               </label>
               <label>
                 Diet goals
-                <textarea defaultValue={starterPreferences.goals} />
+                <textarea
+                  value={prefs.goals}
+                  onChange={(e) => setPrefs({ ...prefs, goals: e.target.value })}
+                />
               </label>
               <fieldset>
                 <legend>Skill level</legend>
                 <div className="segmented-control">
                   {['Beginner', 'Novice', 'Advanced', 'Pro'].map((level) => (
-                    <button className={level === starterPreferences.skillLevel ? 'selected' : ''} key={level} type="button">
+                    <button
+                      className={level === prefs.skillLevel ? 'selected' : ''}
+                      key={level}
+                      type="button"
+                      onClick={() => setPrefs({ ...prefs, skillLevel: level })}
+                    >
                       {level}
                     </button>
                   ))}
@@ -165,9 +197,13 @@ function App() {
               </fieldset>
               <fieldset className="store-options">
                 <legend>Preferred stores</legend>
-                {['Walmart', 'Target', 'Trader Joe’s', 'Kroger'].map((store) => (
+                {['Walmart', 'Target', "Trader Joe’s", 'Kroger'].map((store) => (
                   <label key={store}>
-                    <input defaultChecked={starterPreferences.stores.includes(store)} type="checkbox" />
+                    <input
+                      type="checkbox"
+                      checked={prefs.stores.includes(store)}
+                      onChange={() => toggleStore(store)}
+                    />
                     {store}
                   </label>
                 ))}
@@ -182,27 +218,31 @@ function App() {
             </div>
 
             <div className="recipe-list">
-              {recipeMatches.map((recipe) => (
-                <button
-                  className={recipe.id === selectedRecipeId ? 'recipe-card is-selected' : 'recipe-card'}
-                  key={recipe.id}
-                  onClick={() => {
-                    setSelectedRecipeId(recipe.id)
-                    setActiveView('cook')
-                  }}
-                  type="button"
-                >
-                  <div>
-                    <h3>{recipe.name}</h3>
-                    <p>{recipe.match}</p>
-                  </div>
-                  <div className="recipe-meta">
-                    <span>{recipe.time}</span>
-                    <span>{recipe.level}</span>
-                    <span>{recipe.cartCount} cart items</span>
-                  </div>
-                </button>
-              ))}
+              {loading ? (
+                <p className="helper-copy">Generating recipes…</p>
+              ) : (
+                recipes.map((recipe) => (
+                  <button
+                    className={recipe.id === selectedRecipeId ? 'recipe-card is-selected' : 'recipe-card'}
+                    key={recipe.id}
+                    onClick={() => {
+                      setSelectedRecipeId(recipe.id)
+                      setActiveView('cook')
+                    }}
+                    type="button"
+                  >
+                    <div>
+                      <h3>{recipe.name}</h3>
+                      <p>{recipe.match}</p>
+                    </div>
+                    <div className="recipe-meta">
+                      <span>{recipe.time}</span>
+                      <span>{recipe.level}</span>
+                      <span>{recipe.ingredients.length} ingredients</span>
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
           </article>
 
